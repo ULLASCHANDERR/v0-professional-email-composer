@@ -1,14 +1,12 @@
-// This ensures the AI SDK picks up the API key if the 'apiKey' parameter is not taking precedence.
-// In a production environment, consider setting this as a proper environment variable.
 import { generateText } from "ai"
 import { google } from "@ai-sdk/google" // Using google for Gemini
 
 export async function POST(req: Request) {
   try {
-    const { text, geminiApiKey } = await req.json()
+    const { text, geminiApiKey, geminiApiUrl } = await req.json()
 
-    if (!geminiApiKey) {
-      return new Response(JSON.stringify({ error: "Gemini API key is missing." }), {
+    if (!geminiApiKey || !geminiApiUrl) {
+      return new Response(JSON.stringify({ error: "Gemini API key or URL is missing." }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       })
@@ -21,13 +19,17 @@ export async function POST(req: Request) {
       })
     }
 
-    console.log("[v0] geminiApiKey received:", geminiApiKey ? "present" : "missing")
-
-    process.env.GOOGLE_GENERATIVE_AI_API_KEY = geminiApiKey
-
     const { text: rephrasedText } = await generateText({
-      model: google("gemini-2.0-flash"), // Removed apiKey parameter as it might be conflicting
+      model: google("gemini-2.0-flash", {
+        apiKey: geminiApiKey,
+        baseURL: geminiApiUrl.split("/v1beta")[0], // Extract base URL
+      }),
       prompt: `Rephrase the following text to a professional tone, providing only the rephrased text without any additional suggestions or options:\\n\\n${text}`,
+      maxOutputTokens: 2000,
+      temperature: 0.7,
+      topP: 1, // Ensure single output
+      frequencyPenalty: 0,
+      presencePenalty: 0,
     })
 
     return new Response(JSON.stringify({ rephrasedText }), {

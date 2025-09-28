@@ -10,41 +10,53 @@ import { useToast } from "@/hooks/use-toast"
 import { Eye, EyeOff, Key, Trash2 } from "lucide-react"
 
 export default function SettingsPage() {
-  const { geminiApiKey, saveApiKey, clearApiKey } = useApiKey()
+  const { geminiApiKey, geminiApiUrl, saveApiKey, clearApiKey } = useApiKey()
   const { toast } = useToast()
-  // IMPORTANT: This is a temporary change. Remove this hardcoded key after the user saves it.
-  const [apiKeyInputValue, setApiKeyInputValue] = useState(geminiApiKey || "AIzaSyB-zwLD3t35VgvTzzhA3Kun5ew9OyDRf1M")
+  const [apiKeyInputValue, setApiKeyInputValue] = useState("")
+  const [apiUrlInputValue, setApiUrlInputValue] = useState("")
   const [showKey, setShowKey] = useState(false)
 
   useEffect(() => {
     if (geminiApiKey) {
       setApiKeyInputValue(geminiApiKey)
     }
-  }, [geminiApiKey])
+    if (geminiApiUrl) {
+      setApiUrlInputValue(geminiApiUrl)
+    }
+  }, [geminiApiKey, geminiApiUrl])
 
   const handleSave = () => {
     if (!apiKeyInputValue.trim()) {
       toast({
         title: "Error",
-        description: "Please enter a Gemini API key",
+        description: "Please enter an API key",
+        variant: "destructive",
+      })
+      return
+    }
+    if (!apiUrlInputValue.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter an API URL",
         variant: "destructive",
       })
       return
     }
 
-    saveApiKey(apiKeyInputValue.trim())
+    saveApiKey(apiKeyInputValue.trim(), apiUrlInputValue.trim())
     toast({
       title: "Success",
-      description: "Gemini API key saved successfully",
+      description: "API settings saved successfully",
     })
   }
 
   const handleClear = () => {
     clearApiKey()
     setApiKeyInputValue("")
+    setApiUrlInputValue("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent") // Reset to default
     toast({
       title: "Success",
-      description: "Gemini API key cleared successfully",
+      description: "API settings cleared successfully",
     })
   }
 
@@ -52,33 +64,41 @@ export default function SettingsPage() {
     <div className="max-w-2xl mx-auto">
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">Settings</h1>
-        <p className="text-muted-foreground">Configure your Gemini API key to enable AI-powered features</p>
+        <p className="text-muted-foreground">Configure your API key and URL to enable AI-powered features</p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Key className="h-5 w-5" />
-            Gemini API Configuration
+            API Configuration
           </CardTitle>
           <CardDescription>
-            Enter your Gemini API key to use the text processing features with the Gemini 2.0 Flash model.
+            Enter your Gemini API key and endpoint URL to use the text processing features.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {geminiApiKey && (
+          {(geminiApiKey || geminiApiUrl) && (
             <div className="p-4 bg-muted rounded-lg space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">Current Gemini API Key:</span>
-                  <code className="text-sm bg-background px-2 py-1 rounded">
-                    {showKey ? geminiApiKey : "••••••••••••••••"}
-                  </code>
+              {geminiApiKey && (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">Current API Key:</span>
+                    <code className="text-sm bg-background px-2 py-1 rounded">
+                      {showKey ? geminiApiKey : "••••••••••••••••"}
+                    </code>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => setShowKey(!showKey)}>
+                    {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => setShowKey(!showKey)}>
-                  {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-              </div>
+              )}
+              {geminiApiUrl && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">Current API URL:</span>
+                  <code className="text-sm bg-background px-2 py-1 rounded">{geminiApiUrl}</code>
+                </div>
+              )}
             </div>
           )}
 
@@ -98,11 +118,27 @@ export default function SettingsPage() {
             />
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="gemini-api-url">Gemini API URL</Label>
+            <Input
+              id="gemini-api-url"
+              type="text"
+              placeholder="Enter your Gemini API URL..."
+              value={apiUrlInputValue}
+              onChange={(e) => setApiUrlInputValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  handleSave()
+                }
+              }}
+            />
+          </div>
+
           <div className="flex gap-2">
             <Button onClick={handleSave} className="flex-1">
-              Save API Key
+              Save API Settings
             </Button>
-            {geminiApiKey && (
+            {(geminiApiKey || geminiApiUrl) && (
               <Button variant="destructive" onClick={handleClear} className="flex items-center gap-2">
                 <Trash2 className="h-4 w-4" />
                 Clear
@@ -112,7 +148,8 @@ export default function SettingsPage() {
 
           <div className="text-sm text-muted-foreground space-y-2">
             <p>
-              <strong>Note:</strong> Your API key is stored locally in your browser and never sent to our servers.
+              <strong>Note:</strong> Your API key and URL are stored locally in your browser and never sent to our
+              servers.
             </p>
           </div>
         </CardContent>

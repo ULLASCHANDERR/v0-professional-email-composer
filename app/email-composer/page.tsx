@@ -16,8 +16,7 @@ import { Loader2, Send, Save, Mail } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export default function EmailComposerPage() {
-  const { geminiApiKey, isLoaded: apiKeyLoaded } = useApiKey()
-  const hasApiKey = geminiApiKey.length > 0
+  const { apiKey, hasApiKey, isLoaded: apiKeyLoaded } = useApiKey()
   const {
     conversations,
     activeConversation,
@@ -55,6 +54,15 @@ export default function EmailComposerPage() {
   }, [activeConversation])
 
   const handleGenerateEmail = async () => {
+    if (!hasApiKey) {
+      toast({
+        title: "Error",
+        description: "Please configure your API key in settings.",
+        variant: "destructive",
+      })
+      return
+    }
+
     if (!currentDraft.trim() && (!activeConversation || activeConversation.messages.length === 0)) {
       toast({
         title: "Error",
@@ -67,7 +75,6 @@ export default function EmailComposerPage() {
     setIsLoading(true)
 
     try {
-      console.log("[v0] Client-side apiKey before fetch:", geminiApiKey)
       const response = await fetch("/api/compose-email", {
         method: "POST",
         headers: {
@@ -76,7 +83,7 @@ export default function EmailComposerPage() {
         body: JSON.stringify({
           conversation: activeConversation?.messages || [],
           currentDraft,
-          apiKey: geminiApiKey, // Use geminiApiKey directly
+          apiKey,
         }),
       })
 
