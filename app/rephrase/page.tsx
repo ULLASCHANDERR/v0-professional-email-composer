@@ -5,27 +5,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { useApiKey } from "@/hooks/use-api-key"
 import { useToast } from "@/hooks/use-toast"
-import { ApiKeyWarning } from "@/components/api-key-warning"
 import { Copy, Loader2, Type } from "lucide-react"
 
 export default function RephrasePage() {
-  const { geminiApiKey, geminiApiUrl, hasApiKey, isLoaded } = useApiKey()
   const { toast } = useToast()
   const [inputText, setInputText] = useState("")
   const [rephrasedText, setRephrasedText] = useState("")
   const [isLoading, setIsLoading] = useState(false)
 
   const handleRephrase = async () => {
-    if (!hasApiKey) {
-      toast({
-        title: "Error",
-        description: "Please configure your API key and URL in settings.",
-        variant: "destructive",
-      })
-      return
-    }
 
     if (!inputText.trim()) {
       toast({
@@ -45,7 +34,7 @@ export default function RephrasePage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ text: inputText, geminiApiKey, geminiApiUrl }),
+        body: JSON.stringify({ text: inputText }),
       })
 
       const data = await response.json()
@@ -61,9 +50,11 @@ export default function RephrasePage() {
       })
     } catch (error: any) {
       console.error("[v0] Rephrase error:", error)
+      const errorMessage = error.message || "An unexpected error occurred during rephrasing."
+      setRephrasedText(`Error: ${errorMessage}`)
       toast({
         title: "Error",
-        description: error.message || "An unexpected error occurred during rephrasing.",
+        description: errorMessage,
         variant: "destructive",
       })
     } finally {
@@ -88,7 +79,6 @@ export default function RephrasePage() {
         <p className="text-muted-foreground">Transform your casual text into a professional tone using AI.</p>
       </div>
 
-      {isLoaded && <ApiKeyWarning />}
 
       <Card>
         <CardHeader>
@@ -113,7 +103,7 @@ export default function RephrasePage() {
             />
           </div>
 
-          <Button onClick={handleRephrase} disabled={isLoading || !isLoaded || !hasApiKey} className="w-full">
+          <Button onClick={handleRephrase} disabled={isLoading} className="w-full">
             {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

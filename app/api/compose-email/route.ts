@@ -1,21 +1,11 @@
-import { generateText } from "ai"
-import { google } from "@ai-sdk/google" // Using google for Gemini
+// Using direct HTTP call to Google Generative Language API (v1beta)
 import type { EmailMessage } from "@/hooks/use-email-conversations"
 
 export async function POST(req: Request) {
   try {
-    const { conversation, currentDraft, geminiApiKey, geminiApiUrl } = (await req.json()) as {
+    const { conversation, currentDraft } = (await req.json()) as {
       conversation: EmailMessage[]
       currentDraft: string
-      geminiApiKey: string
-      geminiApiUrl: string
-    }
-
-    if (!geminiApiKey || !geminiApiUrl) {
-      return new Response(JSON.stringify({ error: "Gemini API key or URL is missing." }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      })
     }
 
     if (!currentDraft.trim() && conversation.length === 0) {
@@ -25,38 +15,57 @@ export async function POST(req: Request) {
       })
     }
 
-    const messages = conversation.map((msg) => ({
-      role: msg.role,
-      content: msg.content,
-    }))
+    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY
+    if (!apiKey) {
+      return new Response(JSON.stringify({ error: "Google Generative AI API key is missing." }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
 
-    // Add the current draft as the latest user message for context
-    messages.push({ role: "user", content: currentDraft })
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`
 
-    const { text: generatedEmail } = await generateText({
-      model: google("gemini-2.0-flash", {
-        apiKey: geminiApiKey,
-        baseURL: geminiApiUrl.split("/v1beta")[0], // Extract base URL
+    const prompt = `Create a professional email based on this context:
+    ${conversation.map(msg => msg.content).join("\n")}
+    
+    Current draft/instruction: "${currentDraft}"
+    
+    Return ONLY the email content, properly formatted with greeting, body, and closing. No extra text.`
+
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: prompt }],
+          },
+        ],
+        generationConfig: {
+          maxOutputTokens: 2000,
+          temperature: 0.7,
+          topP: 1,
+          topK: 40,
+        },
       }),
-      prompt: `You are an AI assistant that helps compose and modify professional emails.
-      Based on the following conversation history and the current draft, generate or modify the email to be professional and coherent.
-      If the user provides a new instruction, incorporate it into the email.
-      If the user is continuing a thread, ensure the tone and context are maintained.
-      Provide only the complete, polished email without any additional suggestions or options.
-      
-      Conversation history:
-      ${messages.map((msg) => `${msg.role}: ${msg.content}`).join("\\n")}
-      
-      Current draft/instruction:
-      ${currentDraft}
-      
-      Please provide the complete, polished email.`,
-      maxOutputTokens: 2000,
-      temperature: 0.7,
-      topP: 1, // Ensure single output
-      frequencyPenalty: 0,
-      presencePenalty: 0,
     })
+
+    if (!resp.ok) {
+      const errorBody = await resp.text()
+      throw new Error(`Gemini API error: ${errorBody}`)
+    }
+
+    const data = await resp.json()
+    // Safely extract the first candidate text
+    const candidates = data?.candidates || []
+    const first = candidates[0]
+    const parts = first?.content?.parts || []
+    const generatedEmail = parts.map((p: any) => p?.text).filter(Boolean).join("\n").trim()
+
+    if (!generatedEmail) {
+      throw new Error("Empty response from Gemini API")
+    }
 
     return new Response(JSON.stringify({ generatedEmail }), {
       status: 200,
