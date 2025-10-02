@@ -16,6 +16,7 @@ export interface EmailConversation {
   messages: EmailMessage[]
   createdAt: number
   updatedAt: number
+  pinned?: boolean // optional for backward compatibility
 }
 
 const EMAIL_CONVERSATIONS_STORAGE_KEY = "ai-text-app-email-conversations"
@@ -46,6 +47,7 @@ export function useEmailConversations() {
       messages: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      pinned: false, // default to not pinned
     }
     setConversations((prev) => [newConversation, ...prev])
     setActiveConversationId(newConversation.id)
@@ -89,6 +91,18 @@ export function useEmailConversations() {
     )
   }, [])
 
+  const renameConversation = useCallback((id: string, subject: string) => {
+    setConversations((prev) =>
+      prev.map((conv) => (conv.id === id ? { ...conv, subject, updatedAt: Date.now() } : conv)),
+    )
+  }, [])
+
+  const togglePinConversation = useCallback((id: string) => {
+    setConversations((prev) =>
+      prev.map((conv) => (conv.id === id ? { ...conv, pinned: !conv.pinned, updatedAt: Date.now() } : conv)),
+    )
+  }, [])
+
   const activeConversation = activeConversationId ? getConversation(activeConversationId) : null
 
   return {
@@ -101,5 +115,7 @@ export function useEmailConversations() {
     deleteConversation,
     addMessageToConversation,
     isLoaded,
+    renameConversation,
+    togglePinConversation,
   }
 }

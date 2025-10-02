@@ -25,20 +25,15 @@ export async function POST(req: Request) {
 
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`
 
-    const prompt = `Create a professional email based on this context:
-    ${conversation.map(msg => msg.content).join("\n")}
-    
-    Current draft/instruction: "${currentDraft}"
-    
-    Return ONLY the email content, properly formatted with greeting, body, and closing. No extra text.`
+    const prompt = `Create a professional email based on the following:Context:${conversation.map((msg) => msg.content).join("\n")}Current draft/instruction:"${currentDraft}"Requirements:- Correct grammar, spelling, and tone- Proper greeting, body, and closing- Return ONLY the final email text, no extra commentaryEmail:`
 
     const resp = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [
           {
-            role: 'user',
+            role: "user",
             parts: [{ text: prompt }],
           },
         ],
@@ -57,11 +52,14 @@ export async function POST(req: Request) {
     }
 
     const data = await resp.json()
-    // Safely extract the first candidate text
     const candidates = data?.candidates || []
     const first = candidates[0]
     const parts = first?.content?.parts || []
-    const generatedEmail = parts.map((p: any) => p?.text).filter(Boolean).join("\n").trim()
+    const generatedEmail = parts
+      .map((p: any) => p?.text)
+      .filter(Boolean)
+      .join("\n")
+      .trim()
 
     if (!generatedEmail) {
       throw new Error("Empty response from Gemini API")

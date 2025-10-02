@@ -5,6 +5,10 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Settings, Type, Mail, Home } from "lucide-react"
 
+type SidebarNavProps = {
+  onNavigate?: () => void
+}
+
 const navigation = [
   { name: "Home", href: "/", icon: Home },
   { name: "Rephrase Text", href: "/rephrase", icon: Type },
@@ -12,7 +16,7 @@ const navigation = [
   { name: "Settings", href: "/settings", icon: Settings },
 ]
 
-export function SidebarNav() {
+export function SidebarNav({ onNavigate }: SidebarNavProps) {
   const pathname = usePathname()
 
   return (
@@ -27,6 +31,7 @@ export function SidebarNav() {
             <li key={item.name}>
               <Link
                 href={item.href}
+                onClick={onNavigate}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
                   isActive

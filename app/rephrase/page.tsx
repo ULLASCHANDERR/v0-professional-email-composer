@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { Copy, Loader2, Type } from "lucide-react"
+import { addApiHistory } from "@/hooks/use-api-history"
 
 export default function RephrasePage() {
   const { toast } = useToast()
@@ -15,7 +16,6 @@ export default function RephrasePage() {
   const [isLoading, setIsLoading] = useState(false)
 
   const handleRephrase = async () => {
-
     if (!inputText.trim()) {
       toast({
         title: "Error",
@@ -44,6 +44,17 @@ export default function RephrasePage() {
       }
 
       setRephrasedText(data.rephrasedText)
+
+      // Add to history (store result in currentDraft field)
+      addApiHistory({
+        id: crypto.randomUUID(),
+        type: "rephrase",
+        timestamp: Date.now(),
+        model: "gemini-2.0-flash",
+        inputText,
+        currentDraft: data.rephrasedText,
+      })
+
       toast({
         title: "Success",
         description: "Text rephrased successfully!",
@@ -78,7 +89,6 @@ export default function RephrasePage() {
         <h1 className="text-3xl font-bold mb-2">Rephrase Text</h1>
         <p className="text-muted-foreground">Transform your casual text into a professional tone using AI.</p>
       </div>
-
 
       <Card>
         <CardHeader>

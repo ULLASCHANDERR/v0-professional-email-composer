@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -11,11 +10,13 @@ import { Input } from "@/components/ui/input"
 import { useApiKey } from "@/hooks/use-api-key"
 import { useToast } from "@/hooks/use-toast"
 import { ApiKeyWarning } from "@/components/api-key-warning"
-import { useEmailConversations, type EmailMessage } from "@/hooks/use-email-conversations"
-import { Loader2, Send, Save, Mail } from "lucide-react"
+import { EmailSidebar } from "@/components/email-sidebar"
+import { Mail, Loader2, Save } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { EmailConversationsProvider, useEmailConversationsContext } from "@/contexts/email-conversations-context"
+import { addApiHistory, getComposerLoadPayload, clearComposerLoadPayload } from "@/hooks/use-api-history"
 
-export default function EmailComposerPage() {
+function ComposerContent() {
   const { apiKey, hasApiKey, isLoaded: apiKeyLoaded } = useApiKey()
   const {
     conversations,
@@ -25,12 +26,13 @@ export default function EmailComposerPage() {
     updateConversation,
     addMessageToConversation,
     isLoaded: conversationsLoaded,
-  } = useEmailConversations()
+  } = useEmailConversationsContext()
   const { toast } = useToast()
 
   const [subject, setSubject] = useState(activeConversation?.subject || "")
   const [currentDraft, setCurrentDraft] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
   useEffect(() => {
     if (conversationsLoaded && !activeConversation && conversations.length > 0) {
@@ -42,15 +44,52 @@ export default function EmailComposerPage() {
   }, [conversationsLoaded, activeConversation, conversations, setActiveConversationId, createNewConversation])
 
   useEffect(() => {
+    if (mobileSidebarOpen && activeConversation) setMobileSidebarOpen(false)
+  }, [activeConversation, mobileSidebarOpen])
+
+  useEffect(() => {
     if (activeConversation) {
       setSubject(activeConversation.subject)
-      // Set current draft to the last AI message or empty if new
       const lastAiMessage = activeConversation.messages.filter((msg) => msg.role === "ai").pop()
       setCurrentDraft(lastAiMessage ? lastAiMessage.content : "")
     } else {
       setSubject("New Email Conversation")
       setCurrentDraft("")
     }
+  }, [activeConversation])
+
+  // Helper functions to derive a subject more reliably
+  const extractSubjectFromText = (text: string): string | null => {
+    if (!text) return null
+    // Try "Subject: ..." line
+    const m = text.match(/^\s*subject\s*:\s*(.+)$/im)
+    if (m && m[1]?.trim()) return m[1].trim()
+    // Fallback: first non-empty line
+    const firstLine = text
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => l.length > 0)
+    return firstLine ? firstLine.slice(0, 80) : null
+  }
+
+  useEffect(() => {
+    const payload = getComposerLoadPayload()
+    if (payload) {
+      if (payload.currentDraft) {
+        setCurrentDraft(payload.currentDraft)
+        // if subject still default, try derive from payload
+        if (!subject || subject === "New Email Conversation") {
+          const derived = extractSubjectFromText(payload.currentDraft)
+          if (derived && activeConversation) {
+            setSubject(derived)
+            updateConversation({ ...activeConversation, subject: derived })
+          }
+        }
+      }
+      // Optional: if payload includes conversation, we could seed it; keeping simple for now.
+      clearComposerLoadPayload()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeConversation])
 
   const handleGenerateEmail = async () => {
@@ -96,28 +135,43 @@ export default function EmailComposerPage() {
       const generatedEmail = data.generatedEmail
 
       if (activeConversation) {
-        // Add user input as a message
         addMessageToConversation(activeConversation.id, "user", currentDraft)
-        // Add AI response as a message
         addMessageToConversation(activeConversation.id, "ai", generatedEmail)
-        // Update the current draft with the AI's output
         setCurrentDraft(generatedEmail)
-        // Update subject if it's still default
-        if (activeConversation.subject === "New Email Conversation" && generatedEmail.length > 0) {
-          const firstLine = generatedEmail.split("\n")[0].substring(0, 50) + "..."
-          updateConversation({ ...activeConversation, subject: firstLine })
+
+        if (activeConversation.subject === "New Email Conversation") {
+          const newSubject =
+            (subject && subject.trim()) ||
+            extractSubjectFromText(currentDraft) ||
+            extractSubjectFromText(generatedEmail) ||
+            "New Email"
+          updateConversation({ ...activeConversation, subject: newSubject })
+          setSubject(newSubject)
         }
       } else {
-        // This case should ideally not happen due to useEffect, but as a fallback
         const newConv = createNewConversation()
         addMessageToConversation(newConv.id, "user", currentDraft)
         addMessageToConversation(newConv.id, "ai", generatedEmail)
         setCurrentDraft(generatedEmail)
-        if (generatedEmail.length > 0) {
-          const firstLine = generatedEmail.split("\n")[0].substring(0, 50) + "..."
-          updateConversation({ ...newConv, subject: firstLine })
-        }
+
+        const newSubject =
+          (subject && subject.trim()) ||
+          extractSubjectFromText(currentDraft) ||
+          extractSubjectFromText(generatedEmail) ||
+          "New Email"
+        updateConversation({ ...newConv, subject: newSubject })
+        setSubject(newSubject)
+        setActiveConversationId(newConv.id)
       }
+
+      addApiHistory({
+        id: crypto.randomUUID(),
+        type: "compose",
+        timestamp: Date.now(),
+        model: "gemini-2.0-flash",
+        currentDraft: generatedEmail,
+        conversation: (activeConversation?.messages || []).map((m: any) => ({ role: m.role, content: m.content })),
+      })
 
       toast({
         title: "Success",
@@ -138,7 +192,6 @@ export default function EmailComposerPage() {
   const handleSaveDraft = () => {
     if (activeConversation) {
       const updatedConversation = { ...activeConversation, subject, messages: activeConversation.messages }
-      // Ensure the current draft is saved as the latest AI message if it's not already
       const lastMessage = activeConversation.messages[activeConversation.messages.length - 1]
       if (!lastMessage || lastMessage.content !== currentDraft || lastMessage.role !== "ai") {
         addMessageToConversation(activeConversation.id, "ai", currentDraft)
@@ -159,19 +212,42 @@ export default function EmailComposerPage() {
   }
 
   return (
-    <div className="flex h-full">
-      <div className="flex-1 flex flex-col p-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Email Composer</h1>
-          <p className="text-muted-foreground">
-            Compose, modify, and manage your email conversations with AI assistance.
-          </p>
+    <div className="flex h-full flex-col md:flex-row">
+      <div className={cn("md:block", mobileSidebarOpen ? "block" : "hidden")}>
+        <EmailSidebar />
+      </div>
+
+      <div className="flex-1 flex flex-col p-4 md:p-8">
+        <div className="mb-4 md:mb-8 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setMobileSidebarOpen((s) => !s)}>
+              <Mail className="h-5 w-5" />
+              <span className="sr-only">Toggle conversations</span>
+            </Button>
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold mb-1 md:mb-2 text-balance">Email Composer</h1>
+              <p className="text-muted-foreground text-sm md:text-base">
+                Compose, modify, and manage your email conversations with AI assistance.
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => {
+              const newConv = createNewConversation()
+              setActiveConversationId(newConv.id)
+              setSubject(newConv.subject)
+              setCurrentDraft("")
+            }}
+          >
+            New Chat
+          </Button>
         </div>
 
         {apiKeyLoaded && <ApiKeyWarning />}
 
         {activeConversation && (
-          <Card className="flex-1 flex flex-col">
+          <Card className="flex-1 flex flex-col mb-6">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Mail className="h-5 w-5" />
@@ -214,7 +290,7 @@ export default function EmailComposerPage() {
                     </>
                   ) : (
                     <>
-                      <Send className="mr-2 h-4 w-4" />
+                      <Mail className="mr-2 h-4 w-4" />
                       Generate/Modify Email
                     </>
                   )}
@@ -229,36 +305,46 @@ export default function EmailComposerPage() {
                   Save Draft
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+        )}
 
-              {activeConversation.messages.length > 0 && (
-                <div className="space-y-4 max-h-[300px] overflow-y-auto p-4 border rounded-md bg-muted/20">
-                  <h3 className="text-lg font-semibold">Conversation History</h3>
-                  {activeConversation.messages.map((message: EmailMessage) => (
-                    <div
-                      key={message.id}
-                      className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}
-                    >
-                      <div
-                        className={cn(
-                          "max-w-[70%] p-3 rounded-lg",
-                          message.role === "user"
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-card text-card-foreground border border-border",
-                        )}
-                      >
-                        <p className="text-sm">{message.content}</p>
-                        <span className="block text-xs text-muted-foreground mt-1">
-                          {new Date(message.timestamp).toLocaleTimeString()}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+        {activeConversation && activeConversation.messages.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Conversation History</CardTitle>
+              <CardDescription>Previous messages in this conversation.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 md:max-h-[300px] overflow-y-auto p-2">
+              {activeConversation.messages.map((message: any) => (
+                <div key={message.id} className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}>
+                  <div
+                    className={cn(
+                      "max-w-[70%] p-3 rounded-lg",
+                      message.role === "user"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-card text-card-foreground border border-border",
+                    )}
+                  >
+                    <p className="text-sm">{message.content}</p>
+                    <span className="block text-xs text-muted-foreground mt-1">
+                      {new Date(message.timestamp).toLocaleTimeString()}
+                    </span>
+                  </div>
                 </div>
-              )}
+              ))}
             </CardContent>
           </Card>
         )}
       </div>
     </div>
+  )
+}
+
+export default function EmailComposerPage() {
+  return (
+    <EmailConversationsProvider>
+      <ComposerContent />
+    </EmailConversationsProvider>
   )
 }
